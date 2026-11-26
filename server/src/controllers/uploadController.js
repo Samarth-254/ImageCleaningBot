@@ -191,6 +191,9 @@ export const uploadController = {
         });
       }
 
+      console.log(
+        `[Upload] dealer=${dealerId} job=${jobId} accepted=${accepted.length} duplicates=${duplicates.length} rejected=${rejected.length}`
+      );
       res.json({ jobId, acceptedCount: accepted.length, duplicatesCount: duplicates.length, rejected });
     } catch (err) {
       next(err);

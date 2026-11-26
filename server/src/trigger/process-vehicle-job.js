@@ -22,6 +22,7 @@ export async function runProcessVehicleJob(payload, ctx = {}) {
     );
 
     const images = imagesRes.rows;
+    console.log(`[Job] start job=${jobId} dealer=${dealerId} images=${images.length}`);
     if (images.length === 0) {
       await db.query(
         "UPDATE jobs SET status = 'done', updated_at = NOW() WHERE id = $1 AND dealer_id = $2",
@@ -83,6 +84,7 @@ export async function runProcessVehicleJob(payload, ctx = {}) {
     }
 
     const totalLatencyMs = Date.now() - jobStartedAt;
+    console.log(`[Job] done job=${jobId} totalLatencyMs=${totalLatencyMs} summary=${JSON.stringify(counts)}`);
     const summary = { counts, totalLatencyMs, imageCount: finalImgs.length };
 
     const updated = await db.query(

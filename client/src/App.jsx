@@ -340,7 +340,10 @@ export default function App() {
     if (qr.action === 'download_all') {
       const urls = messages
         .filter((m) => m.payload_json?.afterUrl)
-        .map((m) => m.payload_json.afterUrl);
+        .map((m) => {
+          const u = m.payload_json.afterUrl;
+          return u.startsWith('/api/') && API_BASE ? `${API_BASE.replace(/\/+$/, '')}${u}` : u;
+        });
       urls.forEach((u, idx) => {
         const a = document.createElement('a');
         a.href = u;

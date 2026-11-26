@@ -90,6 +90,7 @@ export const messageController = {
         }
       }
 
+      console.log(`[Message] dealer=${dealerId} intent=${classified.intent}`);
       if (classified.intent === 'done_start') {
         const openJob = await jobModel.findCollecting(dealerId);
         if (openJob) {

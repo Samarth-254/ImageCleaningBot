@@ -42,6 +42,7 @@ export async function editImage({ imageBuffer, instruction }) {
 
       try {
         const res = await editImageKie({ imageBuffer, instruction, apiKey });
+        console.log(`[Editor] provider=kie key=#${idx + 1} model=${res.meta?.model} latencyMs=${res.latencyMs}`);
         return {
           ...res,
           meta: { ...res.meta, keyIndex: idx + 1 },

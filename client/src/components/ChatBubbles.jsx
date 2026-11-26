@@ -1,6 +1,16 @@
 import React from 'react';
 import { Check, CheckCheck, SlidersHorizontal, Wrench } from 'lucide-react';
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+
+function resolveMediaUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('/api/') && API_BASE) {
+    return `${API_BASE}${url}`;
+  }
+  return url;
+}
+
 function formatTime(iso) {
   if (!iso) return '';
   try {
@@ -64,13 +74,14 @@ function ImageGrid({ images, onOpenImage }) {
 
   if (visible.length === 1) {
     const img = visible[0];
+    const imgUrl = resolveMediaUrl(img.url);
     return (
       <div
         className="relative rounded-lg overflow-hidden cursor-pointer mb-1 bg-black/10"
-        onClick={() => onOpenImage({ mode: 'view', url: img.url, caption: img.caption })}
+        onClick={() => onOpenImage({ mode: 'view', url: imgUrl, caption: img.caption })}
       >
         <img
-          src={img.url}
+          src={imgUrl}
           alt={img.caption || 'Uploaded car photo'}
           className="w-full max-h-64 object-cover"
         />
@@ -87,13 +98,14 @@ function ImageGrid({ images, onOpenImage }) {
     <div className="grid grid-cols-2 gap-1 mb-1 rounded-lg overflow-hidden">
       {visible.map((img, idx) => {
         const showPlusN = idx === 3 && extraCount > 0;
+        const imgUrl = resolveMediaUrl(img.url);
         return (
           <div
             key={img.id || idx}
             className="relative aspect-square bg-black/10 cursor-pointer overflow-hidden"
-            onClick={() => onOpenImage({ mode: 'view', url: img.url, caption: img.caption })}
+            onClick={() => onOpenImage({ mode: 'view', url: imgUrl, caption: img.caption })}
           >
-            <img src={img.url} alt="" className="w-full h-full object-cover" />
+            <img src={imgUrl} alt="" className="w-full h-full object-cover" />
             {showPlusN && (
               <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-xl font-bold">
                 +{extraCount}
@@ -121,7 +133,9 @@ export function MessageBubble({ msg, onOpenModal, onQuickReply }) {
   const images = payload.images || [];
   const repairedChips = payload.repairedChips || [];
   const quickReplies = payload.quickReplies || [];
-  const hasCompare = Boolean(payload.beforeUrl && payload.afterUrl);
+  const beforeUrl = resolveMediaUrl(payload.beforeUrl);
+  const afterUrl = resolveMediaUrl(payload.afterUrl);
+  const hasCompare = Boolean(beforeUrl && afterUrl);
 
   return (
     <div className={`flex flex-col ${isOut ? 'items-end pr-2' : 'items-start pl-2'} mb-2 animate-msgIn`}>
@@ -136,10 +150,10 @@ export function MessageBubble({ msg, onOpenModal, onQuickReply }) {
         {images.length > 0 && <ImageGrid images={images} onOpenImage={onOpenModal} />}
 
         {/* Result image with Before/After */}
-        {payload.afterUrl && (
+        {afterUrl && (
           <div className="relative rounded-lg overflow-hidden mb-1.5 bg-black/10">
             <img
-              src={payload.afterUrl}
+              src={afterUrl}
               alt="Processed photo"
               className="w-full max-h-64 object-cover cursor-pointer"
               onClick={() =>
@@ -147,11 +161,11 @@ export function MessageBubble({ msg, onOpenModal, onQuickReply }) {
                   hasCompare
                     ? {
                         mode: 'compare',
-                        beforeUrl: payload.beforeUrl,
-                        afterUrl: payload.afterUrl,
+                        beforeUrl,
+                        afterUrl,
                         caption: msg.text,
                       }
-                    : { mode: 'view', url: payload.afterUrl, caption: msg.text }
+                    : { mode: 'view', url: afterUrl, caption: msg.text }
                 )
               }
             />
@@ -161,8 +175,8 @@ export function MessageBubble({ msg, onOpenModal, onQuickReply }) {
                 onClick={() =>
                   onOpenModal({
                     mode: 'compare',
-                    beforeUrl: payload.beforeUrl,
-                    afterUrl: payload.afterUrl,
+                    beforeUrl,
+                    afterUrl,
                     caption: msg.text,
                   })
                 }

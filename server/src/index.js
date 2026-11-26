@@ -64,6 +64,15 @@ export function createApp() {
   app.use('/api', dealerLimiter);
   app.use(express.json({ limit: '256kb' }));
 
+  app.use((req, res, next) => {
+    if (req.path === '/api/stream') return next();
+    const start = Date.now();
+    res.on('finish', () => {
+      console.log(`[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - start}ms)`);
+    });
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({
       ok: true,

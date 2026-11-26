@@ -74,6 +74,7 @@ export async function runProcessImage(payload, ctx = {}) {
     const policy = policyRow.policy_json;
 
     const runPipeline = async () => {
+      console.log(`[Image] start job=${jobId} seq=${seqNum} image=${imageId}`);
       const originalBuffer = await storage.readBuffer(img.original_path);
       // STEP 1: ANALYZE (skip if already done)
       let analysis = img.analysis_json;
@@ -367,11 +368,13 @@ export async function runProcessImage(payload, ctx = {}) {
         ? `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
         : `Kept the original for photo ${seqNum} (${checkResult?.failure_reasons?.join('; ') || checkResult?.looks_natural?.reason || 'did not pass quality check'}${skipReason}).`;
 
+      const totalLatencyMs = Date.now() - startedAt;
+      console.log(`[Image] done job=${jobId} seq=${seqNum} decision=${finalDecision} latencyMs=${totalLatencyMs}`);
       await db.query(
         `UPDATE images
          SET status = 'completed', final_decision = $1, note = $2, total_latency_ms = $3, updated_at = NOW()
          WHERE id = $4 AND dealer_id = $5`,
-        [finalDecision, note, Date.now() - startedAt, imageId, dealerId]
+        [finalDecision, note, totalLatencyMs, imageId, dealerId]
       );
 
       await db.query(
