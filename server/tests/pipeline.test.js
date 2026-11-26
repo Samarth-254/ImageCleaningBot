@@ -178,14 +178,28 @@ test('buildEditInstruction handles discouraged verbs, splits clear vs obscured, 
   assert.ok(!/\breplace\b/i.test(discouraged.instruction));
   assert.match(discouraged.instruction, /Remove only the visible cracked surface at front panel; change nothing else\./);
 
-  // Retry builds a FRESH instruction (does not append to previous)
+  // Retry prefers AI-written revised_edit_prompt when provided and safe
+  const aiRetry = buildEditInstruction({
+    analysis: BASE_ANALYSIS,
+    policy: DEFAULT_POLICY,
+    retryGuidance: 'Keep front emblem intact.',
+    revisedEditPrompt: 'Make the dusty lower panels look freshly washed and smooth out the crack lines cleanly.',
+    mode: 'ai',
+  });
+  assert.equal(aiRetry.modeUsed, 'ai');
+  assert.equal(aiRetry.fallbackReason, null);
+  assert.ok(aiRetry.instruction.startsWith('Make the dusty lower panels look freshly washed'));
+  assert.ok(aiRetry.instruction.endsWith(FIXED_RULES));
+
+  // Retry falls back to template when revised_edit_prompt is absent
   const retry = buildEditInstruction({
     analysis: BASE_ANALYSIS,
     policy: DEFAULT_POLICY,
     retryGuidance: 'Keep front emblem intact.',
     mode: 'ai',
   });
-  assert.equal(retry.fallbackReason, 'retry_fresh_minimal');
+  assert.equal(retry.modeUsed, 'template');
+  assert.equal(retry.fallbackReason, 'retry_template_fallback');
   assert.match(retry.instruction, /^Minimal repair only \(Keep front emblem intact\.\)/);
   assert.ok(retry.instruction.endsWith(FIXED_RULES));
 });

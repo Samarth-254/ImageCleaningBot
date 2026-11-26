@@ -196,6 +196,7 @@ export const CheckZodSchema = z.object({
   }),
   verdict: z.enum(['pass', 'retry', 'fallback']),
   retry_guidance: z.string().max(400).optional().default(''),
+  revised_edit_prompt: z.string().max(1200).optional().default(''),
 });
 
 const CHECK_RESPONSE_SCHEMA = {
@@ -280,6 +281,7 @@ const CHECK_RESPONSE_SCHEMA = {
     },
     verdict: { type: Type.STRING, enum: ['pass', 'retry', 'fallback'] },
     retry_guidance: { type: Type.STRING },
+    revised_edit_prompt: { type: Type.STRING },
   },
   required: [
     'same_subject_and_scene',
@@ -639,6 +641,7 @@ export function buildEditInstruction({
   analysis,
   policy,
   retryGuidance = '',
+  revisedEditPrompt = '',
   mode = config.editPromptMode,
 }) {
   const rawPrompt = typeof analysis?.edit_prompt === 'string' ? analysis.edit_prompt : '';
@@ -649,8 +652,32 @@ export function buildEditInstruction({
 
   const substitutions = [];
 
-  // Retry always builds a FRESH instruction from retry_guidance + template
-  if (retryGuidance) {
+  // On retry: prefer Checker's AI-written revised_edit_prompt (only fall back to template if empty/unsafe)
+  if (retryGuidance || revisedEditPrompt) {
+    const rawRevised = typeof revisedEditPrompt === 'string' ? revisedEditPrompt : '';
+    const { cleanPrompt: cleanRevised, modified: revModified, reasons: revReasons } = sanitizeEditInputs({
+      editPrompt: rawRevised,
+      mustPreserve: [],
+    });
+    const revBadVerbs = findDiscouragedVerbs(cleanRevised, policy);
+    if (cleanRevised && !revModified && revBadVerbs.length === 0) {
+      return {
+        instruction: assembleCoherentInstruction({
+          mainClause: cleanRevised,
+          cleanPreserve,
+          policy,
+        }),
+        modeUsed: 'ai',
+        fallbackReason: null,
+        substitutions,
+        draftEditPrompt: rawRevised,
+        mustPreserve: cleanPreserve,
+      };
+    }
+    if (revBadVerbs.length > 0) {
+      substitutions.push({ source: 'revised_edit_prompt', verbsFound: revBadVerbs });
+    }
+
     let cleanRetry = sanitizeSingleText(retryGuidance, 350).text;
     const retryBadVerbs = findDiscouragedVerbs(cleanRetry, policy);
     if (retryBadVerbs.length > 0) {
@@ -668,9 +695,9 @@ export function buildEditInstruction({
     return {
       instruction: assembleCoherentInstruction({ mainClause, cleanPreserve, policy }),
       modeUsed: 'template',
-      fallbackReason: 'retry_fresh_minimal',
+      fallbackReason: revModified ? `retry_sanitized:${revReasons.join(',')}` : 'retry_template_fallback',
       substitutions,
-      draftEditPrompt: rawPrompt,
+      draftEditPrompt: rawRevised || rawPrompt,
       mustPreserve: cleanPreserve,
     };
   }
@@ -910,6 +937,7 @@ export function decideRetry({
     analysis,
     policy,
     retryGuidance: check.retry_guidance || check.failure_reasons?.join('; ') || 'Preserve all clear items.',
+    revisedEditPrompt: check.revised_edit_prompt || '',
   });
 
   if (nextBuilt.instruction.trim() === String(previousInstruction || '').trim()) {

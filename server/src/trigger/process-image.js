@@ -28,13 +28,17 @@ async function addTrace(dealerId, jobId, imageId, stage, payload = {}, latencyMs
   );
 }
 
-async function withTimeout(promise, ms, label) {
+async function withTimeout(promiseFactory, ms, label) {
+  const controller = new AbortController();
   let timer;
   const timeoutPromise = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
   });
   try {
-    return await Promise.race([promise, timeoutPromise]);
+    return await Promise.race([promiseFactory(controller.signal), timeoutPromise]);
   } finally {
     clearTimeout(timer);
   }
@@ -73,9 +77,10 @@ export async function runProcessImage(payload, ctx = {}) {
     const policyRow = await getActivePolicy();
     const policy = policyRow.policy_json;
 
-    const runPipeline = async () => {
+    const runPipeline = async (signal) => {
       console.log(`[Image] start job=${jobId} seq=${seqNum} image=${imageId}`);
       const originalBuffer = await storage.readBuffer(img.original_path);
+      if (signal?.aborted) return;
       // STEP 1: ANALYZE (skip if already done)
       let analysis = img.analysis_json;
       if (!stepState.analyzed || !analysis) {
@@ -216,6 +221,7 @@ export async function runProcessImage(payload, ctx = {}) {
             });
 
             const editRes = await editImage({ imageBuffer: originalBuffer, instruction: currentInstruction });
+            if (signal?.aborted) return;
             lastEditMs = editRes.latencyMs;
 
             // Normalize output back to exact oriented original pixel dimensions & strip metadata
@@ -287,6 +293,7 @@ export async function runProcessImage(payload, ctx = {}) {
             imageId,
             isFinalAttempt: attempt >= config.maxEditRetries,
           });
+          if (signal?.aborted) return;
           checkResult = checked.check;
 
           await addTrace(
@@ -375,6 +382,7 @@ export async function runProcessImage(payload, ctx = {}) {
           `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
         : `Kept the original for photo ${seqNum} (${checkResult?.failure_reasons?.join('; ') || checkResult?.looks_natural?.reason || 'did not pass quality check'}${skipReason}).`;
 
+      if (signal?.aborted) return;
       const totalLatencyMs = Date.now() - startedAt;
       console.log(`[Image] done job=${jobId} seq=${seqNum} decision=${finalDecision} latencyMs=${totalLatencyMs}`);
       await db.query(
@@ -434,7 +442,7 @@ export async function runProcessImage(payload, ctx = {}) {
     };
 
     try {
-      return await withTimeout(runPipeline(), config.perImageTimeoutMs, `process-image-${seqNum}`);
+      return await withTimeout((signal) => runPipeline(signal), config.perImageTimeoutMs, `process-image-${seqNum}`);
     } catch (err) {
       // Fail safe: return ORIGINAL photo with an honest note
       const fallbackNote = `Kept the original for photo ${seqNum} (${err.message}).`;

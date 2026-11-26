@@ -31,4 +31,6 @@ INSTRUCTIONS (FIRST LOOK, THEN JUDGE; KEEP EACH OBSERVATION <= 20 WORDS):
 4. `unlisted_differences`: List ONLY `"minor"` or `"major"` visible differences between Image 1 and Image 2 other than the listed repairs and expected `obscured_by_damage` reconstructions (max 8 items). Ignore negligible compression/lighting noise. Do NOT assume the editor was correct.
 5. `problems_actually_fixed`: One entry per listed problem `{ problem, fixed (boolean), note }`.
 6. `looks_natural`: `{ ok (boolean), reason }` and `policy_compliance`: `{ ok (boolean), reason }`.
-7. `verdict`: `"pass"`, `"retry"`, or `"fallback"`, plus conservative minimal-change `retry_guidance` ("remove only ..., change nothing else") if not passing.
+7. `verdict`: `"pass"`, `"retry"`, or `"fallback"`.
+8. `retry_guidance`: brief reason what failed (<= 40 words) if not passing.
+9. `revised_edit_prompt`: if not passing, write a complete, improved, visual instruction (max 1200 chars) for the image editor based on what you observed in Image 1 and Image 2 — focus clearly on fixing what failed (using concrete visual appearance like freshly washed/glossy surface for remaining dirt, or smooth contour for remaining marks) while keeping all `must_preserve` items intact. Never use discouraged verbs (`policy.discouraged_edit_verbs`).
