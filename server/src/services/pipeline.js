@@ -779,8 +779,10 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
     if (p.fixed !== false) return false;
     if (!anyFixed || !Array.isArray(problems) || problems.length === 0) return true;
     const sev = findSeverity(p.problem);
-    if (sev === 'low') return false;
-    if (isFinalAttempt && highSeverityFixed && sev === 'moderate') return false;
+    if (sev === 'low' || sev === 'minor') return false;
+    if (isFinalAttempt && highSeverityFixed && !['high', 'severe', 'critical'].includes(sev)) {
+      return false;
+    }
     return true;
   });
 

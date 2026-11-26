@@ -304,7 +304,7 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
       policy: DEFAULT_POLICY,
       problems: [
         { type: 'cracked surface', severity: 'high' },
-        { type: 'surface dust', severity: 'moderate' },
+        { type: 'surface dust', severity: 'medium' },
       ],
     }
   );
