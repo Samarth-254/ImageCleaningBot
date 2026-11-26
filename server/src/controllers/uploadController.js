@@ -133,38 +133,12 @@ export const uploadController = {
           },
         });
 
-        const delaySeconds = Math.max(1, Math.ceil(config.photoGroupWindowMs / 1000));
-        if (config.triggerSecretKey) {
-          await startJobTask.trigger(
-            { jobId, dealerId, forceNow: false },
-            {
-              delay: `${delaySeconds}s`,
-              idempotencyKey: `start-job-${jobId}-${nowTs}`,
-            }
-          );
-        } else {
-          const timer = setTimeout(() => {
-            jobModel
-              .getStatusAndLastPhoto(jobId, dealerId)
-              .then((row) => {
-                if (row && row.status === 'collecting') {
-                  const elapsed = Date.now() - new Date(row.last_photo_at).getTime();
-                  if (elapsed >= config.photoGroupWindowMs - 500) {
-                    return startJobInProcess({ jobId, dealerId });
-                  }
-                }
-              })
-              .catch(() => {});
-          }, config.photoGroupWindowMs);
-          timer.unref?.();
-        }
-
         await channel.sendMessage({
           dealerId,
           jobId,
           role: 'assistant',
           msgType: 'text',
-          text: `Got ${accepted.length} photo${accepted.length > 1 ? 's' : ''}! Send more or tap "Process now" to start right away.`,
+          text: `Got ${accepted.length} photo${accepted.length > 1 ? 's' : ''}! Send more or tap "Process now" when you are ready.`,
           payload: {
             quickReplies: [{ label: 'Process now', action: 'text', text: 'done' }],
           },
