@@ -11,7 +11,14 @@ export const fileController = {
         return res.status(400).json({ error: 'Invalid filename' });
       }
       const absPath = storage.getAbsolutePath(`${kind}/${filename}`);
-      res.sendFile(absPath);
+      res.sendFile(absPath, (err) => {
+        if (err && !res.headersSent) {
+          if (err.code === 'ENOENT' || err.statusCode === 404) {
+            return res.status(404).json({ error: 'File not found' });
+          }
+          next(err);
+        }
+      });
     } catch (err) {
       next(err);
     }
