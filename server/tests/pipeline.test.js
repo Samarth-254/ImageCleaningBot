@@ -289,6 +289,26 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
     }
   );
   assert.equal(partialLowPass.verdict, 'pass');
+
+  // On final attempt, if a high-severity problem was fixed, do not discard over a remaining moderate blemish
+  const partialModerateFinal = applyCheckGuardrails(
+    {
+      ...BASE_CHECK,
+      problems_actually_fixed: [
+        { problem: 'cracked surface', fixed: true, note: 'Repaired cleanly' },
+        { problem: 'surface dust', fixed: false, note: 'Some dust remains' },
+      ],
+    },
+    {
+      isFinalAttempt: true,
+      policy: DEFAULT_POLICY,
+      problems: [
+        { type: 'cracked surface', severity: 'high' },
+        { type: 'surface dust', severity: 'moderate' },
+      ],
+    }
+  );
+  assert.equal(partialModerateFinal.verdict, 'pass');
 });
 
 test('decideRetry respects retryability and PHOTO_TIME_BUDGET_MS', () => {

@@ -762,18 +762,25 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
   const majorUnlisted = unlisted.filter((u) => String(u.severity || '').toLowerCase() === 'major');
   const minorUnlisted = unlisted.filter((u) => String(u.severity || '').toLowerCase() === 'minor');
   const anyFixed = fixedList.some((p) => p.fixed === true);
+  const findSeverity = (problemName) => {
+    if (!Array.isArray(problems)) return '';
+    const matched = problems.find(
+      (orig) =>
+        String(problemName || '').toLowerCase().includes(String(orig.type || '').toLowerCase()) ||
+        String(orig.type || '').toLowerCase().includes(String(problemName || '').toLowerCase())
+    );
+    return String(matched?.severity || '').toLowerCase();
+  };
+  const highSeverityFixed = fixedList.some(
+    (p) => p.fixed === true && ['high', 'severe', 'critical'].includes(findSeverity(p.problem))
+  );
+
   const unfixedProblems = fixedList.filter((p) => {
     if (p.fixed !== false) return false;
     if (!anyFixed || !Array.isArray(problems) || problems.length === 0) return true;
-    const matched = problems.find(
-      (orig) =>
-        String(p.problem || '').toLowerCase().includes(String(orig.type || '').toLowerCase()) ||
-        String(orig.type || '').toLowerCase().includes(String(p.problem || '').toLowerCase())
-    );
-    // If higher-severity problems were fixed, do not discard the whole edit over a low-severity blemish
-    if (matched && String(matched.severity || '').toLowerCase() === 'low') {
-      return false;
-    }
+    const sev = findSeverity(p.problem);
+    if (sev === 'low') return false;
+    if (isFinalAttempt && highSeverityFixed && sev === 'moderate') return false;
     return true;
   });
 
