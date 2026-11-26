@@ -1,12 +1,79 @@
 import sharp from 'sharp';
 import { config } from '../config.js';
 
+const kieExhaustedUntilByKey = new Map();
+
+export function resetKieCircuitBreaker() {
+  kieExhaustedUntilByKey.clear();
+}
+
+export function isKieCreditOrQuotaError(err) {
+  const status = Number(err?.status || err?.code || 0);
+  if (status === 401 || status === 402 || status === 429) return true;
+  const msg = String(err?.message || '').toLowerCase();
+  return (
+    msg.includes('credit') ||
+    msg.includes('balance') ||
+    msg.includes('insufficient') ||
+    msg.includes('quota') ||
+    msg.includes('402') ||
+    msg.includes('429')
+  );
+}
+
 /**
  * Swappable image editing adapter.
  * Signature: editImage({ imageBuffer, instruction }) -> { imageBuffer, latencyMs, meta }
  */
 export async function editImage({ imageBuffer, instruction }) {
   const provider = config.editProvider;
+  if (provider === 'mock') {
+    return editImageMock({ imageBuffer, instruction });
+  }
+  if (provider === 'kie') {
+    const keys = config.kieApiKeys?.length ? config.kieApiKeys : config.kieApiKey ? [config.kieApiKey] : [];
+    const now = Date.now();
+    let lastErr = null;
+
+    for (let idx = 0; idx < keys.length; idx += 1) {
+      const apiKey = keys[idx];
+      const until = kieExhaustedUntilByKey.get(apiKey) || 0;
+      if (now < until) continue;
+
+      try {
+        const res = await editImageKie({ imageBuffer, instruction, apiKey });
+        return {
+          ...res,
+          meta: { ...res.meta, keyIndex: idx + 1 },
+        };
+      } catch (err) {
+        lastErr = err;
+        if (isKieCreditOrQuotaError(err)) {
+          kieExhaustedUntilByKey.set(apiKey, Date.now() + 10 * 60 * 1000);
+          console.warn(`[Editor] Kie.ai key #${idx + 1} credit/quota issue; trying next key/fallback:`, err.message);
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (config.editFallbackProvider) {
+      const fb = await runProvider(config.editFallbackProvider, { imageBuffer, instruction });
+      return {
+        ...fb,
+        meta: {
+          ...fb.meta,
+          fallbackFrom: 'kie',
+          fallbackReason: lastErr ? lastErr.message : 'all_kie_keys_exhausted',
+        },
+      };
+    }
+    throw lastErr || new Error('All Kie.ai API keys are exhausted or missing');
+  }
+  return runProvider(provider, { imageBuffer, instruction });
+}
+
+async function runProvider(provider, { imageBuffer, instruction }) {
   if (provider === 'mock') {
     return editImageMock({ imageBuffer, instruction });
   }
@@ -50,6 +117,109 @@ async function editImageMock({ imageBuffer, instruction }) {
       instructionLength: instruction?.length || 0,
     },
   };
+}
+
+async function editImageKie({ imageBuffer, instruction, apiKey = config.kieApiKey }) {
+  if (!apiKey) {
+    const err = new Error('KIE_API_KEY is not configured');
+    err.status = 401;
+    throw err;
+  }
+  const startedAt = Date.now();
+  const deadline = startedAt + Math.max(config.editTimeoutMs, 60000);
+  const jpegBuffer = await sharp(imageBuffer).rotate().jpeg({ quality: 92 }).toBuffer();
+
+  // 1. Upload buffer to Kie.ai temporary file storage
+  const form = new FormData();
+  form.append('file', new Blob([jpegBuffer], { type: 'image/jpeg' }), 'input.jpg');
+  form.append('uploadPath', 'cardesk-inputs');
+  form.append('fileName', `car-${Date.now()}.jpg`);
+
+  const uploadResp = await fetch('https://kieai.redpandaai.co/api/file-stream-upload', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  const uploadJson = await uploadResp.json().catch(() => ({}));
+  const downloadUrl = uploadJson?.data?.downloadUrl;
+  if (!uploadResp.ok || !downloadUrl) {
+    const err = new Error(`Kie.ai upload failed (${uploadResp.status}): ${uploadJson?.msg || 'no downloadUrl'}`);
+    err.status = uploadResp.status;
+    throw err;
+  }
+
+  // 2. Create edit task
+  const model = config.kieModelName || 'google/nano-banana-edit';
+  const input =
+    model.startsWith('qwen/')
+      ? { prompt: instruction, image_url: downloadUrl, output_format: 'jpeg' }
+      : { prompt: instruction, image_urls: [downloadUrl], output_format: 'jpeg' };
+
+  const createResp = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model, input }),
+  });
+  const createJson = await createResp.json().catch(() => ({}));
+  const taskId = createJson?.data?.taskId;
+  if (!createResp.ok || createJson?.code !== 200 || !taskId) {
+    const err = new Error(
+      `Kie.ai createTask failed (${createJson?.code || createResp.status}): ${createJson?.msg || 'unknown error'}`
+    );
+    err.status = createJson?.code || createResp.status;
+    throw err;
+  }
+
+  // 3. Poll GET /api/v1/jobs/recordInfo?taskId=...
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 800));
+    const pollResp = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const pollJson = await pollResp.json().catch(() => ({}));
+    const data = pollJson?.data || {};
+    const state = String(data.state || '').toLowerCase();
+
+    if (state === 'success') {
+      let resultUrls = data.resultUrls;
+      if (!resultUrls && typeof data.resultJson === 'string') {
+        try {
+          resultUrls = JSON.parse(data.resultJson)?.resultUrls;
+        } catch {
+          // ignore
+        }
+      }
+      const outUrl = Array.isArray(resultUrls) ? resultUrls[0] : null;
+      if (!outUrl) {
+        throw new Error('Kie.ai task succeeded without resultUrls');
+      }
+      const imgResp = await fetch(outUrl);
+      if (!imgResp.ok) {
+        throw new Error(`Kie.ai output download failed (${imgResp.status})`);
+      }
+      const outBuffer = Buffer.from(await imgResp.arrayBuffer());
+      return {
+        imageBuffer: outBuffer,
+        latencyMs: Date.now() - startedAt,
+        meta: {
+          provider: 'kie',
+          model,
+          taskId,
+        },
+      };
+    }
+
+    if (state === 'fail') {
+      const err = new Error(`Kie.ai task failed: ${data.failMsg || 'unknown error'}`);
+      err.status = Number(data.failCode || 500);
+      throw err;
+    }
+  }
+
+  throw new Error(`Kie.ai edit timed out after ${Date.now() - startedAt}ms`);
 }
 
 function pickAspectRatio(width, height) {

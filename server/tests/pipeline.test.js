@@ -18,7 +18,7 @@ import {
   decideRetry,
   sanitizeEditInputs,
 } from '../src/services/pipeline.js';
-import { editImage } from '../src/services/editor.js';
+import { editImage, isKieCreditOrQuotaError } from '../src/services/editor.js';
 import { DEFAULT_POLICY } from '../src/db/seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -369,4 +369,11 @@ test('editImage mock returns valid JPEG with MOCK badge', async () => {
   } finally {
     config.editProvider = prevProvider;
   }
+});
+
+test('isKieCreditOrQuotaError detects insufficient credit / 402 / 429 errors for fallback', () => {
+  assert.equal(isKieCreditOrQuotaError({ status: 402, message: 'Insufficient credits' }), true);
+  assert.equal(isKieCreditOrQuotaError({ status: 429, message: 'Rate limit' }), true);
+  assert.equal(isKieCreditOrQuotaError({ status: 400, message: 'Not enough balance' }), true);
+  assert.equal(isKieCreditOrQuotaError({ status: 500, message: 'Internal server error' }), false);
 });

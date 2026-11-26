@@ -466,7 +466,7 @@ export async function runProcessImage(payload, ctx = {}) {
 export const processImageTask = task({
   id: 'process-image',
   queue: imageQueue,
-  maxDuration: 120,
+  maxDuration: 240,
   retry: {
     maxAttempts: 3,
     minTimeoutInMs: 1000,
