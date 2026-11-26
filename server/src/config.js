@@ -49,7 +49,7 @@ export const config = {
   editPromptMode: process.env.EDIT_PROMPT_MODE === 'template' ? 'template' : 'ai',
   editTimeoutMs: Number(process.env.EDIT_TIMEOUT_MS || 45000),
   triggerSecretKey: process.env.TRIGGER_SECRET_KEY || '',
-  triggerProjectRef: process.env.TRIGGER_PROJECT_REF || 'proj_asbtzznxbfbvsbpdauxx',
+  triggerProjectRef: process.env.TRIGGER_PROJECT_REF || 'proj_dmnjwndevjpjdjnhtnmc',
   triggerImageConcurrency: Number(process.env.TRIGGER_IMAGE_CONCURRENCY || 3),
   photoGroupWindowMs: Number(process.env.PHOTO_GROUP_WINDOW_MS || 45000),
   maxImagesPerJob: Number(process.env.MAX_IMAGES_PER_JOB || 12),

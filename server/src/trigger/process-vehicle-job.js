@@ -59,8 +59,8 @@ export async function runProcessVehicleJob(payload, ctx = {}) {
       const batchResult = await processImageTask.batchTriggerAndWait(batchItems);
       batchCount = batchResult.runs?.length || 0;
     } else {
-      // Local in-process execution when Trigger.dev is skipped
-      const limit = Math.max(1, config.triggerImageConcurrency);
+      // Local in-process execution when Trigger.dev is skipped (cap at 2 to avoid CPU/Sharp contention)
+      const limit = Math.max(1, Math.min(Number(process.env.LOCAL_IMAGE_CONCURRENCY || 2), config.triggerImageConcurrency));
       for (let i = 0; i < batchItems.length; i += limit) {
         const chunk = batchItems.slice(i, i + limit);
         await Promise.all(chunk.map((item) => runProcessImage(item.payload, { run: { id: 'local-inprocess' } })));

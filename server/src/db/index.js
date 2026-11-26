@@ -13,7 +13,7 @@ export function getPool() {
     pool = new Pool({
       connectionString: config.databaseUrl,
       ssl: { rejectUnauthorized: false },
-      max: 4,
+      max: Number(process.env.DB_POOL_MAX || 12),
       idleTimeoutMillis: 15000,
       connectionTimeoutMillis: 25000,
     });

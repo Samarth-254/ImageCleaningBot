@@ -20,9 +20,11 @@ export const streamController = {
     let lastMsgId = Number(req.headers['last-event-id'] || req.query.lastId || 0);
     let lastTraceHash = '';
     let closed = false;
+    let polling = false;
 
     const poll = async () => {
-      if (closed) return;
+      if (closed || polling) return;
+      polling = true;
       try {
         const newMsgs = await messageModel.listAfterId(dealerId, lastMsgId, 50);
         for (const msg of newMsgs) {
@@ -45,11 +47,13 @@ export const streamController = {
         }
       } catch {
         // Keep SSE alive across transient DB blips
+      } finally {
+        polling = false;
       }
     };
 
     await poll();
-    const interval = setInterval(poll, 500);
+    const interval = setInterval(poll, 1000);
     const heartbeat = setInterval(() => {
       if (!closed) res.write(': keepalive\n\n');
     }, 15000);

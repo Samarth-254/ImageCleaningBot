@@ -199,7 +199,12 @@ export async function runProcessImage(payload, ctx = {}) {
       let currentInstruction = img.edit_instruction || '';
 
       if (!stepState.checked) {
+        let origDims = null;
+        let origDownscaled = null;
+        let origCheckDims = null;
+
         for (let attempt = 0; attempt <= config.maxEditRetries; attempt += 1) {
+          const attemptStartedAt = Date.now();
           let editedBuffer;
           let lastEditMs = 15000;
 
@@ -225,13 +230,16 @@ export async function runProcessImage(payload, ctx = {}) {
             lastEditMs = editRes.latencyMs;
 
             // Normalize output back to exact oriented original pixel dimensions & strip metadata
-            const { info: origInfo } = await sharp(originalBuffer)
-              .rotate()
-              .toBuffer({ resolveWithObject: true });
+            if (!origDims) {
+              const rotatedMeta = await sharp(originalBuffer)
+                .rotate()
+                .toBuffer({ resolveWithObject: true });
+              origDims = { width: rotatedMeta.info.width, height: rotatedMeta.info.height };
+            }
             const normalizedBuffer = await sharp(editRes.imageBuffer)
               .resize({
-                width: origInfo.width,
-                height: origInfo.height,
+                width: origDims.width,
+                height: origDims.height,
                 fit: 'fill',
               })
               .jpeg({ quality: 92 })
@@ -272,14 +280,17 @@ export async function runProcessImage(payload, ctx = {}) {
           );
 
           const checkEdge = config.checkImageMaxEdge;
-          const origDownscaled = await sharp(originalBuffer)
-            .rotate()
-            .resize({ width: checkEdge, height: checkEdge, fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 84 })
-            .toBuffer();
-          const { info: origCheckInfo } = await sharp(origDownscaled).toBuffer({ resolveWithObject: true });
+          if (!origDownscaled || !origCheckDims) {
+            const downscaled = await sharp(originalBuffer)
+              .rotate()
+              .resize({ width: checkEdge, height: checkEdge, fit: 'inside', withoutEnlargement: true })
+              .jpeg({ quality: 84 })
+              .toBuffer({ resolveWithObject: true });
+            origDownscaled = downscaled.data;
+            origCheckDims = { width: downscaled.info.width, height: downscaled.info.height };
+          }
           const editDownscaled = await sharp(editedBuffer)
-            .resize({ width: origCheckInfo.width, height: origCheckInfo.height, fit: 'fill' })
+            .resize({ width: origCheckDims.width, height: origCheckDims.height, fit: 'fill' })
             .jpeg({ quality: 84 })
             .toBuffer();
 
@@ -318,7 +329,8 @@ export async function runProcessImage(payload, ctx = {}) {
           }
 
           const elapsedMs = Date.now() - startedAt;
-          const estimatedRetryMs = lastEditMs + checked.latencyMs;
+          const attemptElapsedMs = Date.now() - attemptStartedAt;
+          const estimatedRetryMs = Math.max(lastEditMs + checked.latencyMs, attemptElapsedMs);
           const decision = decideRetry({
             check: checkResult,
             analysis,
