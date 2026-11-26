@@ -269,6 +269,26 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
   assert.equal(unfixedRetry.retryable, true);
   assert.equal(unfixedRetry.verdict_rule, 'problem_not_fixed');
   assert.match(unfixedRetry.retry_guidance, /dent on trunk lid/);
+
+  // Low-severity unfixed blemish does not discard a high-severity repair
+  const partialLowPass = applyCheckGuardrails(
+    {
+      ...BASE_CHECK,
+      problems_actually_fixed: [
+        { problem: 'cracked surface', fixed: true, note: 'Repaired cleanly' },
+        { problem: 'surface dust', fixed: false, note: 'Light dust remains' },
+      ],
+    },
+    {
+      isFinalAttempt: false,
+      policy: DEFAULT_POLICY,
+      problems: [
+        { type: 'cracked surface', severity: 'high' },
+        { type: 'surface dust', severity: 'low' },
+      ],
+    }
+  );
+  assert.equal(partialLowPass.verdict, 'pass');
 });
 
 test('decideRetry respects retryability and PHOTO_TIME_BUDGET_MS', () => {

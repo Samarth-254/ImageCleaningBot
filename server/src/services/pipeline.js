@@ -649,7 +649,7 @@ export function buildEditInstruction({
 
   const substitutions = [];
 
-  // Retry always builds a FRESH conservative instruction from retry_guidance + template
+  // Retry always builds a FRESH instruction from retry_guidance + template
   if (retryGuidance) {
     let cleanRetry = sanitizeSingleText(retryGuidance, 350).text;
     const retryBadVerbs = findDiscouragedVerbs(cleanRetry, policy);
@@ -658,9 +658,12 @@ export function buildEditInstruction({
       cleanRetry = '';
     }
     const problemClauses = buildMinimalProblemClauses(analysis?.problems, policy, substitutions).join(' ');
-    const mainClause = cleanRetry
-      ? `Minimal repair only (${cleanRetry}): ${problemClauses}`
-      : `Minimal repair only: ${problemClauses}`;
+    const isUnderEdited = /unfixed|not fixed|still visible|still present/i.test(cleanRetry);
+    const mainClause = isUnderEdited
+      ? `Ensure these visible defects are completely removed and cleaned (${cleanRetry}): ${problemClauses}`
+      : cleanRetry
+        ? `Minimal repair only (${cleanRetry}): ${problemClauses}`
+        : `Minimal repair only: ${problemClauses}`;
 
     return {
       instruction: assembleCoherentInstruction({ mainClause, cleanPreserve, policy }),
@@ -741,7 +744,7 @@ export function buildEditInstruction({
  * - Any problems_actually_fixed with fixed === false -> fail (not retryable via narrower edit)
  * - looks_natural.ok === false or policy_compliance.ok === false -> fail (not retryable)
  */
-export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = null } = {}) {
+export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = null, problems = [] } = {}) {
   const preserved = Array.isArray(check?.preserved_items) ? check.preserved_items : [];
   const reconstructed = Array.isArray(check?.reconstructed_regions) ? check.reconstructed_regions : [];
   const unlisted = Array.isArray(check?.unlisted_differences) ? check.unlisted_differences : [];
@@ -758,7 +761,21 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
   );
   const majorUnlisted = unlisted.filter((u) => String(u.severity || '').toLowerCase() === 'major');
   const minorUnlisted = unlisted.filter((u) => String(u.severity || '').toLowerCase() === 'minor');
-  const unfixedProblems = fixedList.filter((p) => p.fixed === false);
+  const anyFixed = fixedList.some((p) => p.fixed === true);
+  const unfixedProblems = fixedList.filter((p) => {
+    if (p.fixed !== false) return false;
+    if (!anyFixed || !Array.isArray(problems) || problems.length === 0) return true;
+    const matched = problems.find(
+      (orig) =>
+        String(p.problem || '').toLowerCase().includes(String(orig.type || '').toLowerCase()) ||
+        String(orig.type || '').toLowerCase().includes(String(p.problem || '').toLowerCase())
+    );
+    // If higher-severity problems were fixed, do not discard the whole edit over a low-severity blemish
+    if (matched && String(matched.severity || '').toLowerCase() === 'low') {
+      return false;
+    }
+    return true;
+  });
 
   const failureReasons = [];
   let verdictRule = 'all_checks_passed';
@@ -935,7 +952,11 @@ export async function runCheckStep({
       success: true,
     }).catch(() => {});
 
-    const guarded = applyCheckGuardrails(res.data, { isFinalAttempt, policy });
+    const guarded = applyCheckGuardrails(res.data, {
+      isFinalAttempt,
+      policy,
+      problems: analysis?.problems || [],
+    });
     return {
       check: {
         ...guarded,
