@@ -364,8 +364,15 @@ export async function runProcessImage(payload, ctx = {}) {
       const reconstructedCount = (checkResult?.reconstructed_regions || []).length;
       const showReconNote = Boolean(policy?.show_reconstruction_note) && reconstructedCount > 0;
       const skipReason = checkResult?.retry_skipped_reason ? ` [${checkResult.retry_skipped_reason}]` : '';
+      const partialUnfixed = checkResult?.partial_unfixed || [];
+      const partialFixed = checkResult?.partial_fixed || [];
+      const partialSummary =
+        passed && partialUnfixed.length > 0
+          ? `${partialFixed.join(', ') || 'main issue'} fixed; ${partialUnfixed.join(', ')} still visible.`
+          : '';
       const note = passed
-        ? `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
+        ? partialSummary ||
+          `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
         : `Kept the original for photo ${seqNum} (${checkResult?.failure_reasons?.join('; ') || checkResult?.looks_natural?.reason || 'did not pass quality check'}${skipReason}).`;
 
       const totalLatencyMs = Date.now() - startedAt;
@@ -404,7 +411,9 @@ export async function runProcessImage(payload, ctx = {}) {
           role: 'assistant',
           msgType: 'result',
           text: passed
-            ? `Photo ${seqNum} fixed!`
+            ? partialSummary
+              ? `Photo ${seqNum} partially fixed (${partialSummary})`
+              : `Photo ${seqNum} fixed!`
             : note,
           payload: {
             beforeUrl,

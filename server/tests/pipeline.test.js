@@ -290,10 +290,11 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
   );
   assert.equal(partialLowPass.verdict, 'pass');
 
-  // On final attempt, if a high-severity problem was fixed, do not discard over a remaining moderate blemish
+  // On final attempt, if a high-severity problem was fixed, do not discard over a remaining medium blemish (even if model verdict='retry')
   const partialModerateFinal = applyCheckGuardrails(
     {
       ...BASE_CHECK,
+      verdict: 'retry',
       problems_actually_fixed: [
         { problem: 'cracked surface', fixed: true, note: 'Repaired cleanly' },
         { problem: 'surface dust', fixed: false, note: 'Some dust remains' },
@@ -309,6 +310,8 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
     }
   );
   assert.equal(partialModerateFinal.verdict, 'pass');
+  assert.equal(partialModerateFinal.verdict_rule, 'partial_repair_accepted');
+  assert.deepEqual(partialModerateFinal.partial_unfixed, ['surface dust']);
 });
 
 test('decideRetry respects retryability and PHOTO_TIME_BUDGET_MS', () => {

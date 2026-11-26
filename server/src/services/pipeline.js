@@ -775,12 +775,17 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
     (p) => p.fixed === true && ['high', 'severe', 'critical'].includes(findSeverity(p.problem))
   );
 
+  const partialUnfixed = [];
   const unfixedProblems = fixedList.filter((p) => {
     if (p.fixed !== false) return false;
     if (!anyFixed || !Array.isArray(problems) || problems.length === 0) return true;
     const sev = findSeverity(p.problem);
-    if (sev === 'low' || sev === 'minor') return false;
+    if (sev === 'low' || sev === 'minor') {
+      partialUnfixed.push(p.problem);
+      return false;
+    }
     if (isFinalAttempt && highSeverityFixed && !['high', 'severe', 'critical'].includes(sev)) {
+      partialUnfixed.push(p.problem);
       return false;
     }
     return true;
@@ -830,9 +835,15 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
   } else if (check?.policy_compliance?.ok === false) {
     verdictRule = 'policy_compliance_failed';
     failureReasons.push(`Policy violation: ${check.policy_compliance.reason}`);
-  } else if (check?.verdict !== 'pass') {
-    verdictRule = `model_verdict_${check?.verdict || 'unknown'}`;
-    failureReasons.push(check?.retry_guidance || 'Model requested retry/fallback.');
+  } else if (check?.verdict === 'fallback') {
+    verdictRule = 'model_verdict_fallback';
+    failureReasons.push(check?.retry_guidance || 'Model requested fallback.');
+  } else if (check?.verdict === 'retry' && !isFinalAttempt) {
+    verdictRule = 'model_verdict_retry';
+    retryable = true;
+    failureReasons.push(check?.retry_guidance || 'Model requested retry.');
+  } else if (partialUnfixed.length > 0) {
+    verdictRule = 'partial_repair_accepted';
   }
 
   if (failureReasons.length > 0) {
@@ -858,6 +869,8 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
     verdict_rule: verdictRule,
     retryable: false,
     failure_reasons: [],
+    partial_unfixed: partialUnfixed,
+    partial_fixed: fixedList.filter((p) => p.fixed === true).map((p) => p.problem),
   };
 }
 
