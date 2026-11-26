@@ -1,0 +1,32 @@
+{
+  "name": "cardesk-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "trigger:dev": "npx trigger.dev@4.8.10 dev",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "check:sql": "node scripts/check-sql.js",
+    "test": "node --test tests/*.test.js",
+    "smoke": "node scripts/smoke.js",
+    "compare:prompts": "node scripts/compare-prompts.js",
+    "bench:check": "node scripts/bench-check.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@trigger.dev/sdk": "4.8.10",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "file-type": "^20.1.0",
+    "helmet": "^8.0.0",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.13.3",
+    "sharp": "^0.33.5",
+    "zod": "^3.24.2"
+  }
+}

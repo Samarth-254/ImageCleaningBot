@@ -1,0 +1,19 @@
+{
+  "name": "cardesk-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n client,server,trigger -c cyan,green,magenta \"npm --prefix client run dev\" \"npm --prefix server run dev\" \"npm --prefix server run trigger:dev\"",
+    "migrate": "npm --prefix server run migrate",
+    "seed": "npm --prefix server run seed",
+    "check:sql": "npm --prefix server run check:sql",
+    "test": "npm --prefix server test",
+    "smoke": "npm --prefix server run smoke",
+    "compare:prompts": "node server/scripts/compare-prompts.js",
+    "bench:check": "node server/scripts/bench-check.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
