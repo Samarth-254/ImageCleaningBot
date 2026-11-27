@@ -54,7 +54,8 @@ export async function editImage({ imageBuffer, instruction }) {
           console.warn(`[Editor] Kie.ai key #${idx + 1} credit/quota issue; trying next key/fallback:`, err.message);
           continue;
         }
-        throw err;
+        console.warn(`[Editor] Kie.ai failed (${err.message}); falling back to ${config.editFallbackProvider || 'none'}.`);
+        break;
       }
     }
 

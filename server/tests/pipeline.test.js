@@ -446,3 +446,36 @@ test('isKieCreditOrQuotaError detects insufficient credit / 402 / 429 errors for
   assert.equal(isKieCreditOrQuotaError({ status: 400, message: 'Not enough balance' }), true);
   assert.equal(isKieCreditOrQuotaError({ status: 500, message: 'Internal server error' }), false);
 });
+
+test('editImage falls back to editFallbackProvider when Kie.ai fails with non-credit error (e.g. sensitive flag)', async () => {
+  const prevProvider = config.editProvider;
+  const prevFallback = config.editFallbackProvider;
+  const prevKeys = config.kieApiKeys;
+  const prevFetch = globalThis.fetch;
+
+  config.editProvider = 'kie';
+  config.editFallbackProvider = 'mock';
+  config.kieApiKeys = ['test-kie-key'];
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 422,
+    json: async () => ({ msg: 'The input or output was flagged as sensitive.' }),
+  });
+
+  try {
+    const sample = await sharp({
+      create: { width: 200, height: 150, channels: 3, background: { r: 60, g: 60, b: 60 } },
+    })
+      .jpeg()
+      .toBuffer();
+    const out = await editImage({ imageBuffer: sample, instruction: 'Clean mud' });
+    assert.equal(out.meta.provider, 'mock');
+    assert.equal(out.meta.fallbackFrom, 'kie');
+    assert.match(out.meta.fallbackReason, /flagged as sensitive/);
+  } finally {
+    config.editProvider = prevProvider;
+    config.editFallbackProvider = prevFallback;
+    config.kieApiKeys = prevKeys;
+    globalThis.fetch = prevFetch;
+  }
+});
