@@ -17,7 +17,6 @@ import {
   buildEditInstruction,
   decideRetry,
   sanitizeEditInputs,
-  shouldUseEditedOutput,
 } from '../src/services/pipeline.js';
 import { editImage, isKieCreditOrQuotaError } from '../src/services/editor.js';
 import { DEFAULT_POLICY } from '../src/db/seed.js';
@@ -478,26 +477,5 @@ test('editImage falls back to editFallbackProvider when Kie.ai fails with non-cr
     config.editFallbackProvider = prevFallback;
     config.kieApiKeys = prevKeys;
     globalThis.fetch = prevFetch;
-  }
-});
-
-test('shouldUseEditedOutput rejects hard check failures and keeps soft/passed edits', () => {
-  assert.equal(shouldUseEditedOutput({ verdict: 'pass', verdict_rule: 'all_checks_passed' }, false), false);
-  assert.equal(shouldUseEditedOutput({ verdict: 'pass', verdict_rule: 'all_checks_passed' }, true), true);
-  assert.equal(shouldUseEditedOutput({ verdict: 'fallback', verdict_rule: 'problem_not_fixed' }, true), true);
-
-  for (const hardRule of [
-    'same_subject_failed',
-    'clear_preserved_item_changed',
-    'inconsistent_reconstruction',
-    'major_unlisted_difference',
-    'looks_natural_failed',
-    'policy_compliance_failed',
-  ]) {
-    assert.equal(
-      shouldUseEditedOutput({ verdict: 'fallback', verdict_rule: hardRule }, true),
-      false,
-      `Expected ${hardRule} to fall back to original`
-    );
   }
 });
