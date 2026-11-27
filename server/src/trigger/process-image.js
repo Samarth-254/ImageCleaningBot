@@ -76,6 +76,7 @@ export async function runProcessImage(payload, ctx = {}) {
 
     const policyRow = await getActivePolicy();
     const policy = policyRow.policy_json;
+    let latestEditRelPath = img.edit_output_path || null;
 
     const runPipeline = async (signal) => {
       console.log(`[Image] start job=${jobId} seq=${seqNum} image=${imageId}`);
@@ -246,6 +247,7 @@ export async function runProcessImage(payload, ctx = {}) {
               .toBuffer();
 
             editRelPath = await storage.saveOutput(normalizedBuffer, 'jpg');
+            latestEditRelPath = editRelPath;
             editedBuffer = normalizedBuffer;
 
             await db.query(
@@ -379,7 +381,8 @@ export async function runProcessImage(payload, ctx = {}) {
       }
 
       const passed = checkResult?.verdict === 'pass';
-      const finalDecision = passed ? 'fixed' : 'fallback_original';
+      const hasEdited = Boolean(editRelPath);
+      const finalDecision = passed || hasEdited ? 'fixed' : 'fallback_original';
       const reconstructedCount = (checkResult?.reconstructed_regions || []).length;
       const showReconNote = Boolean(policy?.show_reconstruction_note) && reconstructedCount > 0;
       const skipReason = checkResult?.retry_skipped_reason ? ` [${checkResult.retry_skipped_reason}]` : '';
@@ -389,10 +392,14 @@ export async function runProcessImage(payload, ctx = {}) {
         passed && partialUnfixed.length > 0
           ? `${partialFixed.join(', ') || 'main issue'} fixed; ${partialUnfixed.join(', ')} still visible.`
           : '';
+      const unpassedIssueSummary =
+        checkResult?.failure_reasons?.join('; ') || checkResult?.looks_natural?.reason || 'some issues may remain';
       const note = passed
         ? partialSummary ||
           `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
-        : `Kept the original for photo ${seqNum} (${checkResult?.failure_reasons?.join('; ') || checkResult?.looks_natural?.reason || 'did not pass quality check'}${skipReason}).`;
+        : hasEdited
+          ? `Edited photo ${seqNum} returned, though some issues were not fully fixed (${unpassedIssueSummary}${skipReason}).`
+          : `Kept the original for photo ${seqNum} (${unpassedIssueSummary}${skipReason}).`;
 
       if (signal?.aborted) return;
       const totalLatencyMs = Date.now() - startedAt;
@@ -411,7 +418,7 @@ export async function runProcessImage(payload, ctx = {}) {
           dealerId,
           jobId,
           imageId,
-          JSON.stringify(passed ? analysis.problems || [] : []),
+          JSON.stringify(passed || hasEdited ? analysis.problems || [] : []),
           config.editModelName,
           finalDecision,
         ]
@@ -419,10 +426,17 @@ export async function runProcessImage(payload, ctx = {}) {
 
       if (!stepState.reported) {
         const beforeUrl = fileUrlFromRelPath(img.original_path);
-        const afterUrl = passed ? fileUrlFromRelPath(editRelPath) : beforeUrl;
+        const afterUrl = hasEdited ? fileUrlFromRelPath(editRelPath) : beforeUrl;
+        const fixedProblemsFromCheck = (checkResult?.problems_actually_fixed || [])
+          .filter((p) => p.fixed)
+          .map((p) => p.problem);
         const repairedChips = passed
           ? (analysis.problems || []).slice(0, 4).map((p) => `${p.type} (${p.where})`)
-          : ['Original returned'];
+          : hasEdited
+            ? fixedProblemsFromCheck.length > 0
+              ? fixedProblemsFromCheck.slice(0, 4)
+              : ['Edited (needs review)']
+            : ['Original returned'];
 
         await channel.sendMessage({
           dealerId,
@@ -456,20 +470,25 @@ export async function runProcessImage(payload, ctx = {}) {
     try {
       return await withTimeout((signal) => runPipeline(signal), config.perImageTimeoutMs, `process-image-${seqNum}`);
     } catch (err) {
-      // Fail safe: return ORIGINAL photo with an honest note
-      const fallbackNote = `Kept the original for photo ${seqNum} (${err.message}).`;
-      await addTrace(dealerId, jobId, imageId, 'fallback_error', { error: err.message });
+      // Return latest edited image if one was produced; only fall back to original if editing never completed
+      const hasLatestEdit = Boolean(latestEditRelPath);
+      const fallbackDecision = hasLatestEdit ? 'fixed' : 'fallback_original';
+      const fallbackNote = hasLatestEdit
+        ? `Edited photo ${seqNum} returned, though verification hit an error (${err.message}).`
+        : `Kept the original for photo ${seqNum} (${err.message}).`;
+      await addTrace(dealerId, jobId, imageId, 'fallback_error', { error: err.message, hasLatestEdit });
 
       await db.query(
         `UPDATE images
-         SET status = 'completed', final_decision = 'fallback_original', note = $1,
-             total_latency_ms = $2, updated_at = NOW()
-         WHERE id = $3 AND dealer_id = $4`,
-        [fallbackNote, Date.now() - startedAt, imageId, dealerId]
+         SET status = 'completed', final_decision = $1, note = $2,
+             total_latency_ms = $3, updated_at = NOW()
+         WHERE id = $4 AND dealer_id = $5`,
+        [fallbackDecision, fallbackNote, Date.now() - startedAt, imageId, dealerId]
       );
 
       if (!stepState.reported) {
         const origUrl = fileUrlFromRelPath(img.original_path);
+        const afterUrl = hasLatestEdit ? fileUrlFromRelPath(latestEditRelPath) : origUrl;
         await channel.sendMessage({
           dealerId,
           jobId,
@@ -479,8 +498,8 @@ export async function runProcessImage(payload, ctx = {}) {
           text: fallbackNote,
           payload: {
             beforeUrl: origUrl,
-            afterUrl: origUrl,
-            repairedChips: ['Original fallback'],
+            afterUrl,
+            repairedChips: hasLatestEdit ? ['Edited (unverified)'] : ['Original fallback'],
             quickReplies: [{ label: `Retry photo ${seqNum}`, action: 'text', text: `retry photo ${seqNum}` }],
           },
         });
@@ -491,7 +510,7 @@ export async function runProcessImage(payload, ctx = {}) {
         );
       }
 
-      return { imageId, finalDecision: 'fallback_original', error: err.message };
+      return { imageId, finalDecision: fallbackDecision, error: err.message };
     }
 }
 

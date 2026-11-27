@@ -257,7 +257,7 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
   assert.equal(subjectFail.retryable, false);
   assert.equal(subjectFail.verdict_rule, 'same_subject_failed');
 
-  // Minor difference threshold from policy
+  // Minor difference threshold from policy (retries on non-final, passes on final)
   const minorExceeded = applyCheckGuardrails(
     {
       ...BASE_CHECK,
@@ -270,6 +270,18 @@ test('applyCheckGuardrails enforces all verdict rules including clear vs obscure
   );
   assert.equal(minorExceeded.verdict, 'retry');
   assert.equal(minorExceeded.verdict_rule, 'minor_unlisted_threshold_exceeded');
+
+  const minorExceededFinal = applyCheckGuardrails(
+    {
+      ...BASE_CHECK,
+      unlisted_differences: [
+        { description: 'Diff 1', location: 'a', severity: 'minor' },
+        { description: 'Diff 2', location: 'b', severity: 'minor' },
+      ],
+    },
+    { isFinalAttempt: true, policy: { ...DEFAULT_POLICY, max_minor_differences: 1 } }
+  );
+  assert.equal(minorExceededFinal.verdict, 'pass');
 
   // Unfixed problem is retryable with targeted retry_guidance
   const unfixedRetry = applyCheckGuardrails(

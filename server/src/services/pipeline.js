@@ -843,7 +843,7 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
     failureReasons.push(
       `Major unlisted difference(s): ${majorUnlisted.map((m) => m.description).join('; ')}`
     );
-  } else if (minorUnlisted.length > maxMinor) {
+  } else if (minorUnlisted.length > maxMinor && !isFinalAttempt) {
     verdictRule = 'minor_unlisted_threshold_exceeded';
     retryable = true;
     failureReasons.push(
@@ -864,6 +864,7 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
     failureReasons.push(`Policy violation: ${check.policy_compliance.reason}`);
   } else if (check?.verdict === 'fallback') {
     verdictRule = 'model_verdict_fallback';
+    retryable = !isFinalAttempt;
     failureReasons.push(check?.retry_guidance || 'Model requested fallback.');
   } else if (check?.verdict === 'retry' && !isFinalAttempt) {
     verdictRule = 'model_verdict_retry';
