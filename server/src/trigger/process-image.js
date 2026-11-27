@@ -7,7 +7,13 @@ import { storage } from '../services/storage.js';
 import { editImage } from '../services/editor.js';
 import { getActivePolicy } from '../services/policy.js';
 import { channel } from '../services/channel.js';
-import { buildEditInstruction, decideRetry, runAnalyzeStep, runCheckStep } from '../services/pipeline.js';
+import {
+  buildEditInstruction,
+  decideRetry,
+  runAnalyzeStep,
+  runCheckStep,
+  shouldUseEditedOutput,
+} from '../services/pipeline.js';
 
 const imageQueue = queue({
   name: 'process-image-queue',
@@ -382,7 +388,8 @@ export async function runProcessImage(payload, ctx = {}) {
 
       const passed = checkResult?.verdict === 'pass';
       const hasEdited = Boolean(editRelPath);
-      const finalDecision = passed || hasEdited ? 'fixed' : 'fallback_original';
+      const useEditedOutput = shouldUseEditedOutput(checkResult, hasEdited);
+      const finalDecision = useEditedOutput ? 'fixed' : 'fallback_original';
       const reconstructedCount = (checkResult?.reconstructed_regions || []).length;
       const showReconNote = Boolean(policy?.show_reconstruction_note) && reconstructedCount > 0;
       const skipReason = checkResult?.retry_skipped_reason ? ` [${checkResult.retry_skipped_reason}]` : '';
@@ -397,7 +404,7 @@ export async function runProcessImage(payload, ctx = {}) {
       const note = passed
         ? partialSummary ||
           `Repaired ${analysis.problems?.length || 0} issue(s) cleanly.${showReconNote ? ` (${reconstructedCount} obscured area(s) reconstructed naturally.)` : ''}`
-        : hasEdited
+        : useEditedOutput
           ? `Edited photo ${seqNum} returned, though some issues were not fully fixed (${unpassedIssueSummary}${skipReason}).`
           : `Kept the original for photo ${seqNum} (${unpassedIssueSummary}${skipReason}).`;
 
@@ -418,7 +425,7 @@ export async function runProcessImage(payload, ctx = {}) {
           dealerId,
           jobId,
           imageId,
-          JSON.stringify(passed || hasEdited ? analysis.problems || [] : []),
+          JSON.stringify(useEditedOutput ? analysis.problems || [] : []),
           config.editModelName,
           finalDecision,
         ]
@@ -426,13 +433,13 @@ export async function runProcessImage(payload, ctx = {}) {
 
       if (!stepState.reported) {
         const beforeUrl = fileUrlFromRelPath(img.original_path);
-        const afterUrl = hasEdited ? fileUrlFromRelPath(editRelPath) : beforeUrl;
+        const afterUrl = useEditedOutput ? fileUrlFromRelPath(editRelPath) : beforeUrl;
         const fixedProblemsFromCheck = (checkResult?.problems_actually_fixed || [])
           .filter((p) => p.fixed)
           .map((p) => p.problem);
         const repairedChips = passed
           ? (analysis.problems || []).slice(0, 4).map((p) => `${p.type} (${p.where})`)
-          : hasEdited
+          : useEditedOutput
             ? fixedProblemsFromCheck.length > 0
               ? fixedProblemsFromCheck.slice(0, 4)
               : ['Edited (needs review)']

@@ -902,6 +902,21 @@ export function applyCheckGuardrails(check, { isFinalAttempt = false, policy = n
   };
 }
 
+export const HARD_FAIL_CHECK_RULES = new Set([
+  'same_subject_failed',
+  'clear_preserved_item_changed',
+  'inconsistent_reconstruction',
+  'major_unlisted_difference',
+  'looks_natural_failed',
+  'policy_compliance_failed',
+]);
+
+export function shouldUseEditedOutput(checkResult, hasEditedFile) {
+  if (!hasEditedFile) return false;
+  if (checkResult?.verdict === 'pass') return true;
+  return !HARD_FAIL_CHECK_RULES.has(checkResult?.verdict_rule);
+}
+
 /**
  * Decide whether to retry based on retryability, maxRetries, PHOTO_TIME_BUDGET_MS,
  * and whether the fresh retry instruction differs from the previous instruction.

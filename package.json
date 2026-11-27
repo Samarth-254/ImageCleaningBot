@@ -8,10 +8,7 @@
     "migrate": "npm --prefix server run migrate",
     "seed": "npm --prefix server run seed",
     "check:sql": "npm --prefix server run check:sql",
-    "test": "npm --prefix server test",
-    "smoke": "npm --prefix server run smoke",
-    "compare:prompts": "node server/scripts/compare-prompts.js",
-    "bench:check": "node server/scripts/bench-check.js"
+    "test": "npm --prefix server test"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

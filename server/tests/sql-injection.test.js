@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { checkSqlSafety } from '../scripts/check-sql.js';
+import { checkSqlSafety } from './check-sql.js';
 import { storage } from '../src/services/storage.js';
 import { config } from '../src/config.js';
 import { db } from '../src/db/index.js';

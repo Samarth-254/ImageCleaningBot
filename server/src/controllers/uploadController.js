@@ -21,12 +21,27 @@ function fileUrlFromRelPath(relPath) {
   return `/api/files/${parts[0]}/${path.basename(relPath)}`;
 }
 
+const localAutoStartTimers = new Map();
+
 async function startJobInProcess({ jobId, dealerId }) {
   const started = await jobModel.startProcessingIfCollecting(jobId, dealerId);
   if (!started) return;
   runProcessVehicleJob({ jobId, dealerId }, { run: { id: 'local-inprocess' } }).catch((err) => {
     console.error('[LocalJob] Failed:', err);
   });
+}
+
+function scheduleLocalAutoStart({ jobId, dealerId, delayMs }) {
+  const existing = localAutoStartTimers.get(jobId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    localAutoStartTimers.delete(jobId);
+    startJobInProcess({ jobId, dealerId }).catch((err) => {
+      console.error('[LocalAutoStart] Failed:', err);
+    });
+  }, delayMs);
+  timer.unref?.();
+  localAutoStartTimers.set(jobId, timer);
 }
 
 export const uploadController = {
@@ -118,6 +133,25 @@ export const uploadController = {
 
       const nowTs = Date.now();
       await jobModel.touchLastPhoto(jobId, dealerId);
+
+      if (accepted.length > 0) {
+        if (config.triggerSecretKey) {
+          const delaySeconds = Math.max(1, Math.ceil(config.photoGroupWindowMs / 1000));
+          startJobTask
+            .trigger(
+              { jobId, dealerId, forceNow: false },
+              {
+                delay: `${delaySeconds}s`,
+                idempotencyKey: `start-job-${jobId}-${nowTs}`,
+              }
+            )
+            .catch((err) => {
+              console.error('[Upload] Failed to schedule start-job:', err.message);
+            });
+        } else {
+          scheduleLocalAutoStart({ jobId, dealerId, delayMs: config.photoGroupWindowMs });
+        }
+      }
 
       if (accepted.length > 0) {
         await channel.sendMessage({
